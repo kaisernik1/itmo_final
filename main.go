@@ -1,192 +1,189 @@
 package main
 
 import (
-	"archive/zip"
-	"bytes"
-	"database/sql"
-	"encoding/csv"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"strconv"
-
-	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
+    "archive/zip"
+    "bytes"
+    "database/sql"
+    "encoding/csv"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "strconv"
 )
 
 const (
-	host     = "localhost"
-	port     = 5432
-	user     = "validator"
-	password = "val1dat0r"
-	dbname   = "project-sem-1"
+    host     = "localhost"
+    port     = 5432
+    user     = "validator"
+    password = "val1dat0r"
+    dbname   = "project-sem-1"
 )
 
 func main() {
-	r := mux.NewRouter()
+    router := http.NewServeMux()
 
-	// Эндпоинт POST /api/v0/prices
-	r.HandleFunc("/api/v0/prices", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
-			return
-		}
+    // Эндпоинт POST /api/v0/prices
+    router.HandleFunc("/api/v0/prices", func(w http.ResponseWriter, r *http.Request) {
+        if r.Method != http.MethodPost {
+            http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+            return
+        }
 
-		// Открываем ZIP-архив из тела запроса
-		file, _, err := r.FormFile("file")
-		if err != nil {
-			http.Error(w, "Error reading file", http.StatusBadRequest)
-			return
-		}
-		defer file.Close()
+        // Открываем ZIP-архив из тела запроса
+        file, _, err := r.FormFile("file")
+        if err != nil {
+            http.Error(w, "Error reading file", http.StatusBadRequest)
+            return
+        }
+        defer file.Close()
 
-		buf := new(bytes.Buffer)
-		_, err = buf.ReadFrom(file)
-		if err != nil {
-			http.Error(w, "Error reading file content", http.StatusBadRequest)
-			return
-		}
+        buf := new(bytes.Buffer)
+        _, err = buf.ReadFrom(file)
+        if err != nil {
+            http.Error(w, "Error reading file content", http.StatusBadRequest)
+            return
+        }
 
-		// Разархивируем ZIP
-		reader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
-		if err != nil {
-			http.Error(w, "Error unzipping file", http.StatusBadRequest)
-			return
-		}
+        // Разархивируем ZIP
+        reader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+        if err != nil {
+            http.Error(w, "Error unzipping file", http.StatusBadRequest)
+            return
+        }
 
-		var totalItems, totalCategories, totalPrice int
-		categorySet := make(map[string]struct{})
+        var totalItems, totalCategories, totalPrice int
+        categorySet := make(map[string]struct{})
 
-		for _, f := range reader.File {
-			if f.Name == "data.csv" {
-				csvFile, err := f.Open()
-				if err != nil {
-					http.Error(w, "Error opening CSV file", http.StatusInternalServerError)
-					return
-				}
-				defer csvFile.Close()
+        for _, f := range reader.File {
+            if f.Name == "data.csv" {
+                csvFile, err := f.Open()
+                if err != nil {
+                    http.Error(w, "Error opening CSV file", http.StatusInternalServerError)
+                    return
+                }
+                defer csvFile.Close()
 
-				reader := csv.NewReader(csvFile)
-				rows, err := reader.ReadAll()
-				if err != nil {
-					http.Error(w, "Error reading CSV", http.StatusInternalServerError)
-					return
-				}
+                reader := csv.NewReader(csvFile)
+                rows, err := reader.ReadAll()
+                if err != nil {
+                    http.Error(w, "Error reading CSV", http.StatusInternalServerError)
+                    return
+                }
 
-				db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
-				if err != nil {
-					http.Error(w, "Database connection error", http.StatusInternalServerError)
-					return
-				}
-				defer db.Close()
+                db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
+                if err != nil {
+                    http.Error(w, "Database connection error", http.StatusInternalServerError)
+                    return
+                }
+                defer db.Close()
 
-				tx, err := db.Begin()
-				if err != nil {
-					http.Error(w, "Transaction error", http.StatusInternalServerError)
-					return
-				}
+                tx, err := db.Begin()
+                if err != nil {
+                    http.Error(w, "Transaction error", http.StatusInternalServerError)
+                    return
+                }
 
-				stmt, err := tx.Prepare(`INSERT INTO prices (id, created_at, name, category, price) VALUES ($1, $2, $3, $4, $5)`)
-				if err != nil {
-					http.Error(w, "SQL preparation error", http.StatusInternalServerError)
-					return
-				}
+                stmt, err := tx.Prepare(`INSERT INTO prices (id, created_at, name, category, price) VALUES ($1, $2, $3, $4, $5)`)
+                if err != nil {
+                    http.Error(w, "SQL preparation error", http.StatusInternalServerError)
+                    return
+                }
 
-				for _, row := range rows[1:] {
-					id := row[0]
-					createdAt := row[1]
-					name := row[2]
-					category := row[3]
-					price, _ := strconv.Atoi(row[4])
+                for _, row := range rows[1:] {
+                    id := row[0]
+                    createdAt := row[1]
+                    name := row[2]
+                    category := row[3]
+                    price, _ := strconv.Atoi(row[4])
 
-					_, err := stmt.Exec(id, createdAt, name, category, price)
-					if err != nil {
-						tx.Rollback()
-						http.Error(w, "Error inserting data", http.StatusInternalServerError)
-						return
-					}
+                    _, err := stmt.Exec(id, createdAt, name, category, price)
+                    if err != nil {
+                        tx.Rollback()
+                        http.Error(w, "Error inserting data", http.StatusInternalServerError)
+                        return
+                    }
 
-					totalItems++
-					totalPrice += price
-					categorySet[category] = struct{}{}
-				}
+                    totalItems++
+                    totalPrice += price
+                    categorySet[category] = struct{}{}
+                }
 
-				err = tx.Commit()
-				if err != nil {
-					http.Error(w, "Transaction commit error", http.StatusInternalServerError)
-					return
-				}
+                err = tx.Commit()
+                if err != nil {
+                    http.Error(w, "Transaction commit error", http.StatusInternalServerError)
+                    return
+                }
 
-				totalCategories = len(categorySet)
-			}
-		}
+                totalCategories = len(categorySet)
+            }
+        }
 
-		response := map[string]int{
-			"total_items":      totalItems,
-			"total_categories": totalCategories,
-			"total_price":      totalPrice,
-		}
+        response := map[string]int{
+            "total_items":      totalItems,
+            "total_categories": totalCategories,
+            "total_price":      totalPrice,
+        }
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-	}).Methods(http.MethodPost)
+        w.Header().Set("Content-Type", "application/json")
+        json.NewEncoder(w).Encode(response)
+    })
 
-	// Эндпоинт GET /api/v0/prices
-	r.HandleFunc("/api/v0/prices", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
-			return
-		}
+    // Эндпоинт GET /api/v0/prices
+    router.HandleFunc("/api/v0/prices", func(w http.ResponseWriter, r *http.Request) {
+        if r.Method != http.MethodGet {
+            http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+            return
+        }
 
-		db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
-		if err != nil {
-			http.Error(w, "Database connection error", http.StatusInternalServerError)
-			return
-		}
-		defer db.Close()
+        db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
+        if err != nil {
+            http.Error(w, "Database connection error", http.StatusInternalServerError)
+            return
+        }
+        defer db.Close()
 
-		rows, err := db.Query("SELECT id, created_at, name, category, price FROM prices")
-		if err != nil {
-			http.Error(w, "Error querying database", http.StatusInternalServerError)
-			return
-		}
-		defer rows.Close()
+        rows, err := db.Query("SELECT id, created_at, name, category, price FROM prices")
+        if err != nil {
+            http.Error(w, "Error querying database", http.StatusInternalServerError)
+            return
+        }
+        defer rows.Close()
 
-		var records [][]string
-		for rows.Next() {
-			var id, createdAt, name, category string
-			var price int
-			err := rows.Scan(&id, &createdAt, &name, &category, &price)
-			if err != nil {
-				http.Error(w, "Error scanning rows", http.StatusInternalServerError)
-				return
-			}
-			records = append(records, []string{id, createdAt, name, category, strconv.Itoa(price)})
-		}
+        var records [][]string
+        for rows.Next() {
+            var id, createdAt, name, category string
+            var price int
+            err := rows.Scan(&id, &createdAt, &name, &category, &price)
+            if err != nil {
+                http.Error(w, "Error scanning rows", http.StatusInternalServerError)
+                return
+            }
+            records = append(records, []string{id, createdAt, name, category, strconv.Itoa(price)})
+        }
 
-		// Создаем CSV файл
-		csvData := &bytes.Buffer{}
-		writer := csv.NewWriter(csvData)
-		writer.Write([]string{"id", "created_at", "name", "category", "price"})
-		for _, record := range records {
-			writer.Write(record)
-		}
-		writer.Flush()
+        // Создаем CSV файл
+        csvData := &bytes.Buffer{}
+        writer := csv.NewWriter(csvData)
+        writer.Write([]string{"id", "created_at", "name", "category", "price"})
+        for _, record := range records {
+            writer.Write(record)
+        }
+        writer.Flush()
 
-		// Создаем ZIP архив
-		zipBuffer := new(bytes.Buffer)
-		zipWriter := zip.NewWriter(zipBuffer)
-		fileWriter, _ := zipWriter.Create("data.csv")
-		io.Copy(fileWriter, csvData)
-		zipWriter.Close()
+        // Создаем ZIP архив
+        zipBuffer := new(bytes.Buffer)
+        zipWriter := zip.NewWriter(zipBuffer)
+        fileWriter, _ := zipWriter.Create("data.csv")
+        io.Copy(fileWriter, csvData)
+        zipWriter.Close()
 
-		// Возвращаем ZIP архив
-		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", "attachment; filename=data.zip")
-		w.Write(zipBuffer.Bytes())
-	}).Methods(http.MethodGet)
+        // Возвращаем ZIP архив
+        w.Header().Set("Content-Type", "application/zip")
+        w.Header().Set("Content-Disposition", "attachment; filename=data.zip")
+        w.Write(zipBuffer.Bytes())
+    })
 
-	fmt.Println("Server started on :8080")
-	http.ListenAndServe(":8080", r)
+    fmt.Println("Server started on :8080")
+    http.ListenAndServe(":8080", router)
 }
