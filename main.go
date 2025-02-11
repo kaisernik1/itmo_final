@@ -26,10 +26,10 @@ func initDatabase(db *sql.DB) error {
     createTableQuery := `
         CREATE TABLE IF NOT EXISTS prices (
             id SERIAL PRIMARY KEY,
-            create_date DATE NOT NULL,
             name VARCHAR(255) NOT NULL,
             category VARCHAR(255) NOT NULL,
-            price INTEGER NOT NULL
+            price INTEGER NOT NULL,
+            create_date DATE NOT NULL
         );
     `
 
@@ -113,7 +113,7 @@ func main() {
                         return
                     }
 
-                    stmt, err := tx.Prepare(`INSERT INTO prices (id, create_date, name, category, price) VALUES ($1, $2, $3, $4, $5)`)
+                    stmt, err := tx.Prepare(`INSERT INTO prices (id, name, category, price, create_date) VALUES ($1, $2, $3, $4, $5)`)
                     if err != nil {
                         http.Error(w, "SQL preparation error", http.StatusInternalServerError)
                         return
@@ -231,4 +231,4 @@ func main() {
     http.ListenAndServe(":8080", router)
 }
 
-// 12 try
+// 13 try
