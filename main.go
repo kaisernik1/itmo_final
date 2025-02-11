@@ -131,7 +131,7 @@ func main() {
                             continue
                         }
 
-                        _, err = stmt.Exec(id, createDate, name, category, price)
+                        _, err = stmt.Exec(id, name, category, price, createDate)
                         if err != nil {
                             tx.Rollback()
                             http.Error(w, "Error inserting data", http.StatusInternalServerError)
@@ -194,6 +194,7 @@ func main() {
                 var price int
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
+                    rows.Close()
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
                     return
                 }
