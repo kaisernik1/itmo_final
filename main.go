@@ -8,6 +8,7 @@ import (
     "encoding/json"
     "fmt"
     "io"
+    "log"
     "net/http"
     "strconv"
 )
@@ -19,6 +20,28 @@ const (
     password = "val1dat0r"
     dbname   = "project-sem-1"
 )
+
+func initDatabase(db *sql.DB) error {
+    // SQL-запрос для создания таблицы prices, если она не существует
+    createTableQuery := `
+        CREATE TABLE IF NOT EXISTS prices (
+            id SERIAL PRIMARY KEY,
+            create_date DATE NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            category VARCHAR(255) NOT NULL,
+            price INTEGER NOT NULL
+        );
+    `
+
+    // Выполнение запроса
+    _, err := db.Exec(createTableQuery)
+    if err != nil {
+        return fmt.Errorf("error creating table: %v", err)
+    }
+
+    log.Println("Таблица 'prices' успешно создана (если не существовала)")
+    return nil
+}
 
 func main() {
     router := http.NewServeMux()
@@ -66,13 +89,23 @@ func main() {
                         http.Error(w, "Error reading CSV", http.StatusInternalServerError)
                         return
                     }
-
+                    
                     db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
                     if err != nil {
+                        log.Printf("Ошибка при подключении к базе данных: %v", err)
                         http.Error(w, "Database connection error", http.StatusInternalServerError)
                         return
                     }
                     defer db.Close()
+                    
+                    // Инициализация базы данных (создание таблицы, если она не существует)
+                    if err := initDatabase(db); err != nil {
+                        log.Printf("Ошибка инициализации базы данных: %v", err)
+                        http.Error(w, "Database initialization error", http.StatusInternalServerError)
+                        return
+                    }
+                    
+                    log.Println("База данных успешно инициализирована")
 
                     tx, err := db.Begin()
                     if err != nil {
@@ -133,10 +166,20 @@ func main() {
             // Обработка GET-запроса
             db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
             if err != nil {
+                log.Printf("Ошибка при подключении к базе данных: %v", err)
                 http.Error(w, "Database connection error", http.StatusInternalServerError)
                 return
             }
             defer db.Close()
+            
+            // Инициализация базы данных (создание таблицы, если она не существует)
+            if err := initDatabase(db); err != nil {
+                log.Printf("Ошибка инициализации базы данных: %v", err)
+                http.Error(w, "Database initialization error", http.StatusInternalServerError)
+                return
+            }
+            
+            log.Println("База данных успешно инициализирована")
 
             rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices")
             if err != nil {
