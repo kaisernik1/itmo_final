@@ -103,7 +103,7 @@ func main() {
                         return
                     }
 
-                    stmt, err := tx.Prepare(`INSERT INTO prices (name, category, price, create_date) VALUES ($1, $2, $3, $4)`)
+                    stmt, err := tx.Prepare(`INSERT INTO prices (name, category, price, create_date) VALUES ($2, $3, $4, $5)`)
                     if err != nil {
                         http.Error(w, "SQL preparation error", http.StatusInternalServerError)
                         return
