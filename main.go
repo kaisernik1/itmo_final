@@ -187,11 +187,10 @@ func main() {
                 var price int
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
+                    rows.Close()
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
                     return
-                    
                 }
-                rows.Close()
                 records = append(records, []string{id, name, category, strconv.Itoa(price), createDate})
             }
 
@@ -207,11 +206,29 @@ func main() {
             // Создаем ZIP архив
             zipBuffer := new(bytes.Buffer)
             zipWriter := zip.NewWriter(zipBuffer)
-            fileWriter, _ := zipWriter.Create("data.csv")
-            io.Copy(fileWriter, csvData)
-            zipWriter.Close()
 
-            // Возвращаем ZIP архив
+            // Добавляем CSV-файл в ZIP-архив
+            fileWriter, err := zipWriter.Create("data.csv")
+            if err != nil {
+                http.Error(w, "Error creating file in ZIP archive", http.StatusInternalServerError)
+                return
+            }
+            _, err = io.Copy(fileWriter, csvData)
+            if err != nil {
+                http.Error(w, "Error copying data to ZIP archive", http.StatusInternalServerError)
+                return
+            }
+
+            // Закрываем ZIP-архив
+            if err := zipWriter.Close(); err != nil {
+                http.Error(w, "Error closing ZIP archive", http.StatusInternalServerError)
+                return
+            }
+
+            // Логируем размер ZIP-архива
+            log.Printf("ZIP archive created successfully. Size: %d bytes", zipBuffer.Len())
+
+            // Возвращаем ZIP архив клиенту
             w.Header().Set("Content-Type", "application/zip")
             w.Header().Set("Content-Disposition", "attachment; filename=data.zip")
             w.Write(zipBuffer.Bytes())
