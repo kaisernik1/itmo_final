@@ -172,13 +172,6 @@ func main() {
             }
             defer db.Close()
             
-            // Инициализация базы данных (создание таблицы, если она не существует)
-            if err := initDatabase(db); err != nil {
-                log.Printf("Ошибка инициализации базы данных: %v", err)
-                http.Error(w, "Database initialization error", http.StatusInternalServerError)
-                return
-            }
-            
             log.Println("База данных успешно инициализирована")
 
             rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices")
@@ -194,10 +187,11 @@ func main() {
                 var price int
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
-                    rows.Close()
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
                     return
+                    
                 }
+                rows.Close()
                 records = append(records, []string{id, name, category, strconv.Itoa(price), createDate})
             }
 
