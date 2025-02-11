@@ -22,7 +22,7 @@ RESPONSE_ZIP="response.zip"
 
 create_test_files() {
     local level=$1
-    sleep 5
+    sleep 15
     if [ "$level" -eq 3 ]; then
         # Создаем тестовый CSV файл с некорректными данными для сложного уровня
         echo "id,name,category,price,create_date" > $TEST_CSV
