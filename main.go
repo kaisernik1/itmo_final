@@ -11,6 +11,7 @@ import (
     "log"
     "net/http"
     "strconv"
+    _ "github.com/lib/pq"
 )
 
 const (
@@ -103,24 +104,25 @@ func main() {
                         return
                     }
 
-                    stmt, err := tx.Prepare(`INSERT INTO prices (name, category, price, create_date) VALUES ($2, $3, $4, $5)`)
+                    stmt, err := tx.Prepare(`INSERT INTO prices (id, name, category, price, create_date) VALUES ($1, $2, $3, $4, $5)`)
                     if err != nil {
                         http.Error(w, "SQL preparation error", http.StatusInternalServerError)
                         return
                     }
 
-                    for _, row := range rows[1:] {
-                        name := row[0]
-                        category := row[1]
-                        priceStr := row[2]
-                        createDate := row[3]
+                    for _, row := range rows[0:] {
+                        id := row[0]
+                        name := row[1]
+                        category := row[2]
+                        priceStr := row[3]
+                        createDate := row[4]
 
                         price, err := strconv.Atoi(priceStr)
                         if err != nil {
                             continue
                         }
 
-                        _, err = stmt.Exec(name, category, price, createDate)
+                        _, err = stmt.Exec(id, name, category, price, createDate)
                         if err != nil {
                             tx.Rollback()
                             http.Error(w, "Error inserting data", http.StatusInternalServerError)
@@ -160,7 +162,7 @@ func main() {
             }
             defer db.Close()
 
-            rows, err := db.Query("SELECT name, category, price, create_date FROM prices")
+            rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices")
             if err != nil {
                 http.Error(w, "Error querying database", http.StatusInternalServerError)
                 return
@@ -169,20 +171,20 @@ func main() {
 
             var records [][]string
             for rows.Next() {
-                var name, category, createDate string
-                var price int
-                err := rows.Scan(&name, &category, &price, &createDate)
+                var id, name, category, createDate string
+                var price float64
+                err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
                     rows.Close()
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
                     return
                 }
-                records = append(records, []string{name, category, strconv.Itoa(price), createDate})
+                records = append(records, []string{id, name, category, fmt.Sprintf("%.2f", price), createDate})
             }
 
             csvData := &bytes.Buffer{}
             writer := csv.NewWriter(csvData)
-            writer.Write([]string{"name", "category", "price", "create_date"})
+            writer.Write([]string{"id", "name", "category", "price", "create_date"})
             for _, record := range records {
                 writer.Write(record)
             }
