@@ -63,7 +63,7 @@ check_api_simple() {
         echo -e "${RED}✗ POST запрос неуспешен${NC}"
         return 1
     fi
-    
+    sleep 15
     # Проверка GET /api/v0/prices
     echo "Тестирование GET /api/v0/prices"
     
