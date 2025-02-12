@@ -11,6 +11,7 @@ import (
     "log"
     "net/http"
     "strconv"
+    "time"
 
     _ "github.com/lib/pq"
 )
@@ -25,13 +26,13 @@ const (
 
 func initDatabase(db *sql.DB) error {
     createTableQuery := `
-        CREATE TABLE IF NOT EXISTS prices (
-            id INTEGER PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            category VARCHAR(255) NOT NULL,
-            price NUMERIC(10, 2) NOT NULL,
-            create_date DATE NOT NULL
-        );
+    CREATE TABLE IF NOT EXISTS prices (
+        id INTEGER PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        category VARCHAR(255) NOT NULL,
+        price REAL NOT NULL,
+        create_date DATE NOT NULL
+    );
     `
     _, err := db.Exec(createTableQuery)
     if err != nil {
@@ -48,8 +49,8 @@ func main() {
         case http.MethodPost:
             file, _, err := r.FormFile("file")
             if err != nil {
-                log.Printf("Ошибка чтения файла: %v", err)
                 http.Error(w, "Error reading file", http.StatusBadRequest)
+                log.Printf("Ошибка чтения файла: %v", err)
                 return
             }
             defer file.Close()
@@ -57,19 +58,19 @@ func main() {
             buf := new(bytes.Buffer)
             _, err = buf.ReadFrom(file)
             if err != nil {
-                log.Printf("Ошибка чтения содержимого файла: %v", err)
                 http.Error(w, "Error reading file content", http.StatusBadRequest)
+                log.Printf("Ошибка чтения содержимого файла: %v", err)
                 return
             }
 
             reader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
             if err != nil {
-                log.Printf("Ошибка распаковки ZIP-архива: %v", err)
                 http.Error(w, "Error unzipping file", http.StatusBadRequest)
+                log.Printf("Ошибка распаковки ZIP-архива: %v", err)
                 return
             }
 
-            var totalItems, totalCategories int
+            var totalItems int
             var totalPrice float64
             categorySet := make(map[string]struct{})
 
@@ -77,46 +78,48 @@ func main() {
                 if f.Name == "data.csv" {
                     csvFile, err := f.Open()
                     if err != nil {
-                        log.Printf("Ошибка открытия CSV-файла: %v", err)
                         http.Error(w, "Error opening CSV file", http.StatusInternalServerError)
+                        log.Printf("Ошибка открытия CSV-файла: %v", err)
                         return
                     }
                     defer csvFile.Close()
 
                     rows, err := csv.NewReader(csvFile).ReadAll()
                     if err != nil {
-                        log.Printf("Ошибка чтения CSV-файла: %v", err)
                         http.Error(w, "Error reading CSV", http.StatusInternalServerError)
+                        log.Printf("Ошибка чтения CSV-файла: %v", err)
                         return
                     }
 
                     db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
                     if err != nil {
-                        log.Printf("Ошибка подключения к базе данных: %v", err)
                         http.Error(w, "Database connection error", http.StatusInternalServerError)
+                        log.Printf("Ошибка подключения к базе данных: %v", err)
                         return
                     }
                     defer db.Close()
 
                     if err := initDatabase(db); err != nil {
-                        log.Printf("Ошибка инициализации базы данных: %v", err)
                         http.Error(w, "Database initialization error", http.StatusInternalServerError)
+                        log.Printf("Ошибка инициализации базы данных: %v", err)
                         return
                     }
 
                     tx, err := db.Begin()
                     if err != nil {
-                        log.Printf("Ошибка начала транзакции: %v", err)
                         http.Error(w, "Transaction error", http.StatusInternalServerError)
+                        log.Printf("Ошибка начала транзакции: %v", err)
                         return
                     }
 
-                    stmt, err := tx.Prepare(`INSERT INTO prices (id, name, category, price, create_date) VALUES ($1, $2, $3, $4, $5)`)
+                    stmt, err := tx.Prepare(`INSERT INTO prices (id, name, category, price, create_date) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET name=$2, category=$3, price=$4, create_date=$5`)
                     if err != nil {
-                        log.Printf("Ошибка подготовки SQL-запроса: %v", err)
                         http.Error(w, "SQL preparation error", http.StatusInternalServerError)
+                        log.Printf("Ошибка подготовки SQL-запроса: %v", err)
+                        tx.Rollback()
                         return
                     }
+                    defer stmt.Close()
 
                     for _, row := range rows[1:] { // Пропускаем заголовок
                         idStr := row[0]
@@ -142,7 +145,13 @@ func main() {
                             continue
                         }
 
-                        _, err = stmt.Exec(id, name, category, price, createDate)
+                        createDateParsed, err := time.Parse("2006-01-02", createDate)
+                        if err != nil {
+                            log.Printf("Ошибка парсинга даты: %v", err)
+                            continue
+                        }
+
+                        _, err = stmt.Exec(id, name, category, price, createDateParsed)
                         if err != nil {
                             log.Printf("Ошибка выполнения запроса: %v", err)
                             tx.Rollback()
@@ -161,32 +170,30 @@ func main() {
                         http.Error(w, "Transaction commit error", http.StatusInternalServerError)
                         return
                     }
-
-                    totalCategories = len(categorySet)
                 }
             }
 
             response := map[string]interface{}{
-                "total_items":      totalItems,
-                "total_categories": totalCategories,
-                "total_price":      totalPrice,
+                "total_items": totalItems,
+                "total_price": totalPrice,
             }
+
             w.Header().Set("Content-Type", "application/json")
             json.NewEncoder(w).Encode(response)
 
         case http.MethodGet:
             db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
             if err != nil {
-                log.Printf("Ошибка подключения к базе данных: %v", err)
                 http.Error(w, "Database connection error", http.StatusInternalServerError)
+                log.Printf("Ошибка подключения к базе данных: %v", err)
                 return
             }
             defer db.Close()
 
-            rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices")
+            rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices ORDER BY id")
             if err != nil {
-                log.Printf("Ошибка запроса данных из базы: %v", err)
                 http.Error(w, "Error querying database", http.StatusInternalServerError)
+                log.Printf("Ошибка запроса данных из базы: %v", err)
                 return
             }
             defer rows.Close()
@@ -196,15 +203,12 @@ func main() {
                 var id int
                 var name, category, createDate string
                 var price float64
-
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
-                    log.Printf("Ошибка чтения строки из базы: %v", err)
-                    rows.Close()
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
+                    log.Printf("Ошибка чтения строки из базы: %v", err)
                     return
                 }
-
                 records = append(records, []string{
                     strconv.Itoa(id),
                     name,
@@ -226,19 +230,21 @@ func main() {
             zipWriter := zip.NewWriter(zipBuffer)
             fileWriter, err := zipWriter.Create("data.csv")
             if err != nil {
-                log.Printf("Ошибка создания файла в ZIP-архиве: %v", err)
                 http.Error(w, "Error creating file in ZIP archive", http.StatusInternalServerError)
+                log.Printf("Ошибка создания файла в ZIP-архиве: %v", err)
                 return
             }
+
             _, err = io.Copy(fileWriter, csvData)
             if err != nil {
-                log.Printf("Ошибка записи данных в ZIP-архив: %v", err)
                 http.Error(w, "Error copying data to ZIP archive", http.StatusInternalServerError)
+                log.Printf("Ошибка записи данных в ZIP-архив: %v", err)
                 return
             }
+
             if err := zipWriter.Close(); err != nil {
-                log.Printf("Ошибка закрытия ZIP-архива: %v", err)
                 http.Error(w, "Error closing ZIP archive", http.StatusInternalServerError)
+                log.Printf("Ошибка закрытия ZIP-архива: %v", err)
                 return
             }
 
@@ -252,5 +258,7 @@ func main() {
     })
 
     fmt.Println("Server started on :8080")
-    http.ListenAndServe(":8080", router)
+    if err := http.ListenAndServe(":8080", router); err != nil {
+        log.Fatalf("Ошибка запуска сервера: %v", err)
+    }
 }
