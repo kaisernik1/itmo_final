@@ -26,10 +26,10 @@ const (
 func initDatabase(db *sql.DB) error {
     createTableQuery := `
         CREATE TABLE IF NOT EXISTS prices (
-            id INTEGER PRIMARY KEY,          -- Тип ID остался INTEGER
+            id INTEGER PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             category VARCHAR(255) NOT NULL,
-            price NUMERIC(10, 2) NOT NULL,   -- Изменено: INTEGER -> NUMERIC(10, 2)
+            price NUMERIC(10, 2) NOT NULL,
             create_date DATE NOT NULL
         );
     `
@@ -67,7 +67,7 @@ func main() {
             }
 
             var totalItems, totalCategories int
-            var totalPrice float64 // Изменено: int -> float64
+            var totalPrice float64
             categorySet := make(map[string]struct{})
 
             for _, f := range reader.File {
@@ -118,21 +118,18 @@ func main() {
                         priceStr := row[3]
                         createDate := row[4]
 
-                        // Преобразуем id в int
                         id, err := strconv.Atoi(idStr)
                         if err != nil {
                             log.Printf("Ошибка преобразования ID: %v", err)
                             continue
                         }
 
-                        // Преобразуем price в float64
                         price, err := strconv.ParseFloat(priceStr, 64)
                         if err != nil {
                             log.Printf("Ошибка преобразования цены: %v", err)
                             continue
                         }
 
-                        // Вставка данных в базу
                         _, err = stmt.Exec(id, name, category, price, createDate)
                         if err != nil {
                             tx.Rollback()
@@ -151,7 +148,6 @@ func main() {
                         return
                     }
 
-                    // Подсчитываем уникальные категории
                     totalCategories = len(categorySet)
                 }
             }
@@ -159,7 +155,7 @@ func main() {
             response := map[string]interface{}{
                 "total_items":      totalItems,
                 "total_categories": totalCategories,
-                "total_price":      totalPrice, // Отправляем общую сумму как float64
+                "total_price":      totalPrice,
             }
             w.Header().Set("Content-Type", "application/json")
             json.NewEncoder(w).Encode(response)
@@ -180,11 +176,11 @@ func main() {
             }
             defer rows.Close()
 
-            var records [][]interface{} // Изменено: [][]string -> [][]interface{}
+            var records [][]string
             for rows.Next() {
-                var id int             // Изменено: string -> int
+                var id int
                 var name, category, createDate string
-                var price float64      // Цена осталась float64
+                var price float64
 
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
@@ -193,24 +189,25 @@ func main() {
                     return
                 }
 
-                // Добавляем запись в формате []interface{}
-                records = append(records, []interface{}{id, name, category, fmt.Sprintf("%.2f", price), createDate})
+                records = append(records, []string{
+                    strconv.Itoa(id),               // Преобразуем id в строку
+                    name,
+                    category,
+                    fmt.Sprintf("%.2f", price),     // Форматируем цену с двумя знаками после запятой
+                    createDate,
+                })
             }
 
+            // Создаем CSV-файл
             csvData := &bytes.Buffer{}
             writer := csv.NewWriter(csvData)
             writer.Write([]string{"id", "name", "category", "price", "create_date"})
-
             for _, record := range records {
-                // Преобразуем каждый элемент записи в строку
-                csvRecord := make([]string, len(record))
-                for i, value := range record {
-                    csvRecord[i] = fmt.Sprintf("%v", value)
-                }
-                writer.Write(csvRecord)
+                writer.Write(record)
             }
             writer.Flush()
 
+            // Создаем ZIP-архив
             zipBuffer := new(bytes.Buffer)
             zipWriter := zip.NewWriter(zipBuffer)
             fileWriter, err := zipWriter.Create("data.csv")
@@ -228,9 +225,9 @@ func main() {
                 return
             }
 
-            log.Printf("ZIP archive created successfully. Size: %d bytes", zipBuffer.Len())
+            // Отправляем ZIP-архив клиенту
             w.Header().Set("Content-Type", "application/zip")
-            w.Header().Set("Content-Disposition", "attachment; filename=data.zip")
+            w.Header().Set("Content-Disposition", "attachment; filename=response.zip")
             w.Write(zipBuffer.Bytes())
 
         default:
