@@ -11,6 +11,7 @@ import (
     "log"
     "net/http"
     "strconv"
+
     _ "github.com/lib/pq"
 )
 
@@ -25,7 +26,7 @@ const (
 func initDatabase(db *sql.DB) error {
     createTableQuery := `
         CREATE TABLE IF NOT EXISTS prices (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY,          -- Изменено: SERIAL -> INTEGER
             name VARCHAR(255) NOT NULL,
             category VARCHAR(255) NOT NULL,
             price INTEGER NOT NULL,
@@ -42,7 +43,6 @@ func initDatabase(db *sql.DB) error {
 
 func main() {
     router := http.NewServeMux()
-
     router.HandleFunc("/api/v0/prices", func(w http.ResponseWriter, r *http.Request) {
         switch r.Method {
         case http.MethodPost:
@@ -110,18 +110,27 @@ func main() {
                         return
                     }
 
-                    for _, row := range rows[0:] {
-                        id := row[0]
+                    for _, row := range rows[1:] { // Пропускаем заголовок
+                        idStr := row[0]
                         name := row[1]
                         category := row[2]
                         priceStr := row[3]
                         createDate := row[4]
 
-                        price, err := strconv.Atoi(priceStr)
+                        // Преобразуем id и price в int
+                        id, err := strconv.Atoi(idStr)
                         if err != nil {
+                            log.Printf("Ошибка преобразования ID: %v", err)
                             continue
                         }
 
+                        price, err := strconv.Atoi(priceStr)
+                        if err != nil {
+                            log.Printf("Ошибка преобразования цены: %v", err)
+                            continue
+                        }
+
+                        // Вставка данных в базу
                         _, err = stmt.Exec(id, name, category, price, createDate)
                         if err != nil {
                             tx.Rollback()
@@ -140,16 +149,16 @@ func main() {
                         return
                     }
 
+                    // Подсчитываем уникальные категории
                     totalCategories = len(categorySet)
                 }
             }
 
             response := map[string]int{
                 "total_items":      totalItems,
-                "total_categories": totalCategories,
+                "total_categories": totalCategories, // Используем totalCategories
                 "total_price":      totalPrice,
             }
-
             w.Header().Set("Content-Type", "application/json")
             json.NewEncoder(w).Encode(response)
 
@@ -202,14 +211,12 @@ func main() {
                 http.Error(w, "Error copying data to ZIP archive", http.StatusInternalServerError)
                 return
             }
-
             if err := zipWriter.Close(); err != nil {
                 http.Error(w, "Error closing ZIP archive", http.StatusInternalServerError)
                 return
             }
 
             log.Printf("ZIP archive created successfully. Size: %d bytes", zipBuffer.Len())
-
             w.Header().Set("Content-Type", "application/zip")
             w.Header().Set("Content-Disposition", "attachment; filename=data.zip")
             w.Write(zipBuffer.Bytes())
