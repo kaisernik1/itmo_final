@@ -33,7 +33,6 @@ func initDatabase(db *sql.DB) error {
             create_date DATE NOT NULL
         );
     `
-    log.Println("Попытка создания таблицы 'prices'")
     _, err := db.Exec(createTableQuery)
     if err != nil {
         return fmt.Errorf("ошибка создания таблицы: %v", err)
@@ -76,7 +75,6 @@ func main() {
 
             for _, f := range reader.File {
                 if f.Name == "data.csv" {
-                    log.Println("Найден файл data.csv. Начало обработки...")
                     csvFile, err := f.Open()
                     if err != nil {
                         log.Printf("Ошибка открытия CSV-файла: %v", err)
@@ -91,8 +89,6 @@ func main() {
                         http.Error(w, "Error reading CSV", http.StatusInternalServerError)
                         return
                     }
-
-                    log.Printf("Число строк в CSV: %d", len(rows))
 
                     db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
                     if err != nil {
@@ -122,10 +118,7 @@ func main() {
                         return
                     }
 
-                    log.Println("Начало обработки строк из CSV...")
-                    for i, row := range rows[1:] { // Пропускаем заголовок
-                        log.Printf("Обработка строки #%d: %v", i+2, row)
-
+                    for _, row := range rows[1:] { // Пропускаем заголовок
                         idStr := row[0]
                         name := row[1]
                         category := row[2]
@@ -133,26 +126,25 @@ func main() {
                         createDate := row[4]
 
                         if idStr == "" || name == "" || category == "" || priceStr == "" || createDate == "" {
-                            log.Printf("Пропущена строка #%d: недостаточно данных", i+2)
+                            log.Printf("Пропущена строка: недостаточно данных")
                             continue
                         }
 
                         id, err := strconv.Atoi(idStr)
                         if err != nil {
-                            log.Printf("Ошибка преобразования ID в строке #%d: %v", i+2, err)
+                            log.Printf("Ошибка преобразования ID: %v", err)
                             continue
                         }
 
                         price, err := strconv.ParseFloat(priceStr, 64)
                         if err != nil {
-                            log.Printf("Ошибка преобразования цены в строке #%d: %v", i+2, err)
+                            log.Printf("Ошибка преобразования цены: %v", err)
                             continue
                         }
 
-                        log.Printf("Выполнение запроса для строки #%d: id=%d, name=%s, category=%s, price=%.2f, create_date=%s", i+2, id, name, category, price, createDate)
                         _, err = stmt.Exec(id, name, category, price, createDate)
                         if err != nil {
-                            log.Printf("Ошибка выполнения запроса для строки #%d: %v", i+2, err)
+                            log.Printf("Ошибка выполнения запроса: %v", err)
                             tx.Rollback()
                             http.Error(w, "Error inserting data", http.StatusInternalServerError)
                             return
@@ -163,8 +155,6 @@ func main() {
                         categorySet[category] = struct{}{}
                     }
 
-                    log.Println("Завершение обработки строк из CSV.")
-
                     err = tx.Commit()
                     if err != nil {
                         log.Printf("Ошибка завершения транзакции: %v", err)
@@ -172,7 +162,6 @@ func main() {
                         return
                     }
 
-                    log.Println("Транзакция успешно завершена.")
                     totalCategories = len(categorySet)
                 }
             }
@@ -253,7 +242,6 @@ func main() {
                 return
             }
 
-            log.Println("ZIP-архив успешно создан.")
             w.Header().Set("Content-Type", "application/zip")
             w.Header().Set("Content-Disposition", "attachment; filename=response.zip")
             w.Write(zipBuffer.Bytes())
