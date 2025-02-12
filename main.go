@@ -11,6 +11,7 @@ import (
     "log"
     "net/http"
     "strconv"
+    "strings"
     "time"
 
     _ "github.com/lib/pq"
@@ -30,7 +31,7 @@ func initDatabase(db *sql.DB) error {
         id INTEGER PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         category VARCHAR(255) NOT NULL,
-        price REAL NOT NULL,
+        price NUMERIC(10, 2) NOT NULL,
         create_date DATE NOT NULL
     );
     `
@@ -122,7 +123,7 @@ func main() {
                     defer stmt.Close()
 
                     for _, row := range rows[1:] { // Пропускаем заголовок
-                        idStr := row[0]
+                        idStr := strings.TrimSpace(row[0])
                         name := row[1]
                         category := row[2]
                         priceStr := row[3]
@@ -133,27 +134,30 @@ func main() {
                             continue
                         }
 
+                        // Проверка и парсинг значения id
                         id, err := strconv.Atoi(idStr)
                         if err != nil {
-                            log.Printf("Ошибка преобразования ID: %v", err)
+                            log.Printf("Ошибка преобразования ID: %v, строка: %v", err, row)
                             continue
                         }
 
+                        // Проверка и парсинг значения price
                         price, err := strconv.ParseFloat(priceStr, 64)
                         if err != nil {
-                            log.Printf("Ошибка преобразования цены: %v", err)
+                            log.Printf("Ошибка преобразования цены: %v, строка: %v", err, row)
                             continue
                         }
 
+                        // Проверка и парсинг значения create_date
                         createDateParsed, err := time.Parse("2006-01-02", createDate)
                         if err != nil {
-                            log.Printf("Ошибка парсинга даты: %v", err)
+                            log.Printf("Ошибка парсинга даты: %v, строка: %v", err, row)
                             continue
                         }
 
                         _, err = stmt.Exec(id, name, category, price, createDateParsed)
                         if err != nil {
-                            log.Printf("Ошибка выполнения запроса: %v", err)
+                            log.Printf("Ошибка выполнения запроса: %v, строка: %v", err, row)
                             tx.Rollback()
                             http.Error(w, "Error inserting data", http.StatusInternalServerError)
                             return
@@ -174,8 +178,9 @@ func main() {
             }
 
             response := map[string]interface{}{
-                "total_items": totalItems,
-                "total_price": totalPrice,
+                "total_items":      totalItems,
+                "total_categories": len(categorySet),
+                "total_price":      totalPrice,
             }
 
             w.Header().Set("Content-Type", "application/json")
