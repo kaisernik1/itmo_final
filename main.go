@@ -195,7 +195,7 @@ func main() {
             }
             defer db.Close()
 
-            rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices ORDER BY id")
+            rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices")
             if err != nil {
                 http.Error(w, "Error querying database", http.StatusInternalServerError)
                 log.Printf("Ошибка запроса данных из базы: %v", err)
@@ -208,12 +208,21 @@ func main() {
                 var id int
                 var name, category, createDate string
                 var price float64
+            
+                // Считываем данные из строки
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
                     log.Printf("Ошибка чтения строки из базы: %v", err)
                     return
                 }
+            
+                // Форматируем дату, убирая часть после 'T'
+                if idx := strings.Index(createDate, "T"); idx != -1 {
+                    createDate = createDate[:idx]
+                }
+            
+                // Добавляем запись в список records
                 records = append(records, []string{
                     strconv.Itoa(id),
                     name,
