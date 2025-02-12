@@ -33,9 +33,10 @@ func initDatabase(db *sql.DB) error {
             create_date DATE NOT NULL
         );
     `
+    log.Println("Попытка создания таблицы 'prices'")
     _, err := db.Exec(createTableQuery)
     if err != nil {
-        return fmt.Errorf("error creating table: %v", err)
+        return fmt.Errorf("ошибка создания таблицы: %v", err)
     }
     log.Println("Таблица 'prices' успешно создана (если не существовала)")
     return nil
@@ -48,6 +49,7 @@ func main() {
         case http.MethodPost:
             file, _, err := r.FormFile("file")
             if err != nil {
+                log.Printf("Ошибка чтения файла: %v", err)
                 http.Error(w, "Error reading file", http.StatusBadRequest)
                 return
             }
@@ -56,12 +58,14 @@ func main() {
             buf := new(bytes.Buffer)
             _, err = buf.ReadFrom(file)
             if err != nil {
+                log.Printf("Ошибка чтения содержимого файла: %v", err)
                 http.Error(w, "Error reading file content", http.StatusBadRequest)
                 return
             }
 
             reader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
             if err != nil {
+                log.Printf("Ошибка распаковки ZIP-архива: %v", err)
                 http.Error(w, "Error unzipping file", http.StatusBadRequest)
                 return
             }
@@ -72,8 +76,10 @@ func main() {
 
             for _, f := range reader.File {
                 if f.Name == "data.csv" {
+                    log.Println("Найден файл data.csv. Начало обработки...")
                     csvFile, err := f.Open()
                     if err != nil {
+                        log.Printf("Ошибка открытия CSV-файла: %v", err)
                         http.Error(w, "Error opening CSV file", http.StatusInternalServerError)
                         return
                     }
@@ -81,13 +87,16 @@ func main() {
 
                     rows, err := csv.NewReader(csvFile).ReadAll()
                     if err != nil {
+                        log.Printf("Ошибка чтения CSV-файла: %v", err)
                         http.Error(w, "Error reading CSV", http.StatusInternalServerError)
                         return
                     }
 
+                    log.Printf("Число строк в CSV: %d", len(rows))
+
                     db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
                     if err != nil {
-                        log.Printf("Ошибка при подключении к базе данных: %v", err)
+                        log.Printf("Ошибка подключения к базе данных: %v", err)
                         http.Error(w, "Database connection error", http.StatusInternalServerError)
                         return
                     }
@@ -101,37 +110,49 @@ func main() {
 
                     tx, err := db.Begin()
                     if err != nil {
+                        log.Printf("Ошибка начала транзакции: %v", err)
                         http.Error(w, "Transaction error", http.StatusInternalServerError)
                         return
                     }
 
                     stmt, err := tx.Prepare(`INSERT INTO prices (id, name, category, price, create_date) VALUES ($1, $2, $3, $4, $5)`)
                     if err != nil {
+                        log.Printf("Ошибка подготовки SQL-запроса: %v", err)
                         http.Error(w, "SQL preparation error", http.StatusInternalServerError)
                         return
                     }
 
-                    for _, row := range rows[1:] { // Пропускаем заголовок
+                    log.Println("Начало обработки строк из CSV...")
+                    for i, row := range rows[1:] { // Пропускаем заголовок
+                        log.Printf("Обработка строки #%d: %v", i+2, row)
+
                         idStr := row[0]
                         name := row[1]
                         category := row[2]
                         priceStr := row[3]
                         createDate := row[4]
 
+                        if idStr == "" || name == "" || category == "" || priceStr == "" || createDate == "" {
+                            log.Printf("Пропущена строка #%d: недостаточно данных", i+2)
+                            continue
+                        }
+
                         id, err := strconv.Atoi(idStr)
                         if err != nil {
-                            log.Printf("Ошибка преобразования ID: %v", err)
+                            log.Printf("Ошибка преобразования ID в строке #%d: %v", i+2, err)
                             continue
                         }
 
                         price, err := strconv.ParseFloat(priceStr, 64)
                         if err != nil {
-                            log.Printf("Ошибка преобразования цены: %v", err)
+                            log.Printf("Ошибка преобразования цены в строке #%d: %v", i+2, err)
                             continue
                         }
 
+                        log.Printf("Выполнение запроса для строки #%d: id=%d, name=%s, category=%s, price=%.2f, create_date=%s", i+2, id, name, category, price, createDate)
                         _, err = stmt.Exec(id, name, category, price, createDate)
                         if err != nil {
+                            log.Printf("Ошибка выполнения запроса для строки #%d: %v", i+2, err)
                             tx.Rollback()
                             http.Error(w, "Error inserting data", http.StatusInternalServerError)
                             return
@@ -142,12 +163,16 @@ func main() {
                         categorySet[category] = struct{}{}
                     }
 
+                    log.Println("Завершение обработки строк из CSV.")
+
                     err = tx.Commit()
                     if err != nil {
+                        log.Printf("Ошибка завершения транзакции: %v", err)
                         http.Error(w, "Transaction commit error", http.StatusInternalServerError)
                         return
                     }
 
+                    log.Println("Транзакция успешно завершена.")
                     totalCategories = len(categorySet)
                 }
             }
@@ -163,7 +188,7 @@ func main() {
         case http.MethodGet:
             db, err := sql.Open("postgres", fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname))
             if err != nil {
-                log.Printf("Ошибка при подключении к базе данных: %v", err)
+                log.Printf("Ошибка подключения к базе данных: %v", err)
                 http.Error(w, "Database connection error", http.StatusInternalServerError)
                 return
             }
@@ -171,6 +196,7 @@ func main() {
 
             rows, err := db.Query("SELECT id, name, category, price, create_date FROM prices")
             if err != nil {
+                log.Printf("Ошибка запроса данных из базы: %v", err)
                 http.Error(w, "Error querying database", http.StatusInternalServerError)
                 return
             }
@@ -184,21 +210,21 @@ func main() {
 
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
+                    log.Printf("Ошибка чтения строки из базы: %v", err)
                     rows.Close()
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
                     return
                 }
 
                 records = append(records, []string{
-                    strconv.Itoa(id),               // Преобразуем id в строку
+                    strconv.Itoa(id),
                     name,
                     category,
-                    fmt.Sprintf("%.2f", price),     // Форматируем цену с двумя знаками после запятой
+                    fmt.Sprintf("%.2f", price),
                     createDate,
                 })
             }
 
-            // Создаем CSV-файл
             csvData := &bytes.Buffer{}
             writer := csv.NewWriter(csvData)
             writer.Write([]string{"id", "name", "category", "price", "create_date"})
@@ -207,25 +233,27 @@ func main() {
             }
             writer.Flush()
 
-            // Создаем ZIP-архив
             zipBuffer := new(bytes.Buffer)
             zipWriter := zip.NewWriter(zipBuffer)
             fileWriter, err := zipWriter.Create("data.csv")
             if err != nil {
+                log.Printf("Ошибка создания файла в ZIP-архиве: %v", err)
                 http.Error(w, "Error creating file in ZIP archive", http.StatusInternalServerError)
                 return
             }
             _, err = io.Copy(fileWriter, csvData)
             if err != nil {
+                log.Printf("Ошибка записи данных в ZIP-архив: %v", err)
                 http.Error(w, "Error copying data to ZIP archive", http.StatusInternalServerError)
                 return
             }
             if err := zipWriter.Close(); err != nil {
+                log.Printf("Ошибка закрытия ZIP-архива: %v", err)
                 http.Error(w, "Error closing ZIP archive", http.StatusInternalServerError)
                 return
             }
 
-            // Отправляем ZIP-архив клиенту
+            log.Println("ZIP-архив успешно создан.")
             w.Header().Set("Content-Type", "application/zip")
             w.Header().Set("Content-Disposition", "attachment; filename=response.zip")
             w.Write(zipBuffer.Bytes())
