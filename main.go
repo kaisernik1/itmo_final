@@ -26,10 +26,10 @@ const (
 func initDatabase(db *sql.DB) error {
     createTableQuery := `
         CREATE TABLE IF NOT EXISTS prices (
-            id INTEGER PRIMARY KEY,          -- Изменено: SERIAL -> INTEGER
+            id INTEGER PRIMARY KEY,          -- Тип ID остался INTEGER
             name VARCHAR(255) NOT NULL,
             category VARCHAR(255) NOT NULL,
-            price INTEGER NOT NULL,
+            price NUMERIC(10, 2) NOT NULL,   -- Изменено: INTEGER -> NUMERIC(10, 2)
             create_date DATE NOT NULL
         );
     `
@@ -66,7 +66,8 @@ func main() {
                 return
             }
 
-            var totalItems, totalCategories, totalPrice int
+            var totalItems, totalCategories int
+            var totalPrice float64 // Изменено: int -> float64
             categorySet := make(map[string]struct{})
 
             for _, f := range reader.File {
@@ -117,14 +118,15 @@ func main() {
                         priceStr := row[3]
                         createDate := row[4]
 
-                        // Преобразуем id и price в int
+                        // Преобразуем id в int
                         id, err := strconv.Atoi(idStr)
                         if err != nil {
                             log.Printf("Ошибка преобразования ID: %v", err)
                             continue
                         }
 
-                        price, err := strconv.Atoi(priceStr)
+                        // Преобразуем price в float64
+                        price, err := strconv.ParseFloat(priceStr, 64)
                         if err != nil {
                             log.Printf("Ошибка преобразования цены: %v", err)
                             continue
@@ -154,10 +156,10 @@ func main() {
                 }
             }
 
-            response := map[string]int{
+            response := map[string]interface{}{
                 "total_items":      totalItems,
-                "total_categories": totalCategories, // Используем totalCategories
-                "total_price":      totalPrice,
+                "total_categories": totalCategories,
+                "total_price":      totalPrice, // Отправляем общую сумму как float64
             }
             w.Header().Set("Content-Type", "application/json")
             json.NewEncoder(w).Encode(response)
@@ -178,24 +180,34 @@ func main() {
             }
             defer rows.Close()
 
-            var records [][]string
+            var records [][]interface{} // Изменено: [][]string -> [][]interface{}
             for rows.Next() {
-                var id, name, category, createDate string
-                var price float64
+                var id int             // Изменено: string -> int
+                var name, category, createDate string
+                var price float64      // Цена осталась float64
+
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
                     rows.Close()
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
                     return
                 }
-                records = append(records, []string{id, name, category, fmt.Sprintf("%.2f", price), createDate})
+
+                // Добавляем запись в формате []interface{}
+                records = append(records, []interface{}{id, name, category, fmt.Sprintf("%.2f", price), createDate})
             }
 
             csvData := &bytes.Buffer{}
             writer := csv.NewWriter(csvData)
             writer.Write([]string{"id", "name", "category", "price", "create_date"})
+
             for _, record := range records {
-                writer.Write(record)
+                // Преобразуем каждый элемент записи в строку
+                csvRecord := make([]string, len(record))
+                for i, value := range record {
+                    csvRecord[i] = fmt.Sprintf("%v", value)
+                }
+                writer.Write(csvRecord)
             }
             writer.Flush()
 
