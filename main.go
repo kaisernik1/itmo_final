@@ -177,7 +177,7 @@ func main() {
             response := map[string]interface{}{
                 "total_items":      totalItems,
                 "total_categories": len(categorySet),
-                "total_price":      totalPrice,
+                "total_price":      fmt.Sprintf("%.2f", totalPrice),
             }
 
             w.Header().Set("Content-Type", "application/json")
