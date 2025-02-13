@@ -22,7 +22,6 @@ RESPONSE_ZIP="response.zip"
 
 create_test_files() {
     local level=$1
-    
     if [ "$level" -eq 3 ]; then
         # Создаем тестовый CSV файл с некорректными данными для сложного уровня
         echo "id,name,category,price,create_date" > $TEST_CSV
@@ -63,7 +62,6 @@ check_api_simple() {
         echo -e "${RED}✗ POST запрос неуспешен${NC}"
         return 1
     fi
-    
     # Проверка GET /api/v0/prices
     echo "Тестирование GET /api/v0/prices"
     
