@@ -122,7 +122,7 @@ func main() {
                     }
                     defer stmt.Close()
 
-                    for _, row := range rows[1:] { // Пропускаем заголовок
+                    for _, row := range rows[1:] {
                         idStr := strings.TrimSpace(row[0])
                         name := row[1]
                         category := row[2]
@@ -134,21 +134,18 @@ func main() {
                             continue
                         }
 
-                        // Проверка и парсинг значения id
                         id, err := strconv.Atoi(idStr)
                         if err != nil {
                             log.Printf("Ошибка преобразования ID: %v, строка: %v", err, row)
                             continue
                         }
 
-                        // Проверка и парсинг значения price
                         price, err := strconv.ParseFloat(priceStr, 64)
                         if err != nil {
                             log.Printf("Ошибка преобразования цены: %v, строка: %v", err, row)
                             continue
                         }
 
-                        // Проверка и парсинг значения create_date
                         createDateParsed, err := time.Parse("2006-01-02", createDate)
                         if err != nil {
                             log.Printf("Ошибка парсинга даты: %v, строка: %v", err, row)
@@ -209,7 +206,6 @@ func main() {
                 var name, category, createDate string
                 var price float64
             
-                // Считываем данные из строки
                 err := rows.Scan(&id, &name, &category, &price, &createDate)
                 if err != nil {
                     http.Error(w, "Error scanning rows", http.StatusInternalServerError)
@@ -217,12 +213,10 @@ func main() {
                     return
                 }
             
-                // Форматируем дату, убирая часть после 'T'
                 if idx := strings.Index(createDate, "T"); idx != -1 {
                     createDate = createDate[:idx]
                 }
             
-                // Добавляем запись в список records
                 records = append(records, []string{
                     strconv.Itoa(id),
                     name,
